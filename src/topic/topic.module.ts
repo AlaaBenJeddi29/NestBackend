@@ -1,14 +1,11 @@
-// src/topic/topic.module.ts
 import { Module } from '@nestjs/common';
-import { MongooseModule } from '@nestjs/mongoose';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { TopicService } from './topic.service';
 import { TopicController } from './topic.controller';
-import { Topic, TopicSchema } from './topic.schema';
+import { Topic } from './entities/topic.entity';
 
 @Module({
-  imports: [
-    MongooseModule.forFeature([{ name: Topic.name, schema: TopicSchema }]),
-  ],
+  imports: [TypeOrmModule.forFeature([Topic])],
   controllers: [TopicController],
   providers: [TopicService],
   exports: [TopicService],
