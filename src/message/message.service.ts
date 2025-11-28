@@ -1,65 +1,70 @@
+// src/message/message.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { Message, MessageDocument } from './message.schema';
+import { Topic, TopicDocument } from '../topic/topic.schema';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
-import { Message } from './entities/message.entity';
-import { Topic } from '../topic/entities/topic.entity';
 
 @Injectable()
 export class MessageService {
   constructor(
-    @InjectRepository(Message)
-    private messageRepo: Repository<Message>,
-    @InjectRepository(Topic)
-    private topicRepo: Repository<Topic>,
+    @InjectModel(Message.name) private messageModel: Model<MessageDocument>,
+    @InjectModel(Topic.name) private topicModel: Model<TopicDocument>,
   ) {}
 
   async create(createMessageDto: CreateMessageDto) {
-    console.log('Creating message:', createMessageDto); // DEBUG
-
-    const topic = await this.topicRepo.findOne({
-      where: { id: createMessageDto.topicId },
-    });
+    const topic = await this.topicModel.findById(createMessageDto.topicId).exec();
     if (!topic) throw new NotFoundException(`Topic ${createMessageDto.topicId} not found`);
 
-    const message = this.messageRepo.create({
-      ...createMessageDto,
-      topic,
+    const message = new this.messageModel({
+      author: createMessageDto.author,
+      content: createMessageDto.content,
+      topic: topic._id,
     });
 
-    const saved = await this.messageRepo.save(message);
-    console.log('Saved message:', saved); // DEBUG
+    const savedMessage = await message.save();
 
-    return saved;
+    // Add message to topic's messages array
+    await this.topicModel.findByIdAndUpdate(
+      topic._id,
+      { $push: { messages: savedMessage._id } },
+      { new: true },
+    );
+
+    return savedMessage;
   }
 
   findAll() {
-    return this.messageRepo.find({ relations: ['topic'] });
+    return this.messageModel.find().populate('topic').exec();
   }
 
-  findOne(id: number) {
-    return this.messageRepo.findOne({ where: { id }, relations: ['topic'] });
+  async findOne(id: string) {
+    const message = await this.messageModel.findById(id).populate('topic').exec();
+    if (!message) throw new NotFoundException(`Message #${id} not found`);
+    return message;
   }
 
-  async update(id: number, updateMessageDto: UpdateMessageDto) {
-    const message = await this.messageRepo.findOneBy({ id });
-    if (!message) throw new NotFoundException();
-
-    if (updateMessageDto.topicId) {
-      const topic = await this.topicRepo.findOneBy({ id: updateMessageDto.topicId });
-      if (!topic) throw new NotFoundException('Topic not found');
-      message.topic = topic;
-    }
-
-    Object.assign(message, updateMessageDto);
-    return this.messageRepo.save(message);
+  async update(id: string, updateMessageDto: UpdateMessageDto) {
+    const updated = await this.messageModel
+      .findByIdAndUpdate(id, updateMessageDto, { new: true })
+      .exec();
+    if (!updated) throw new NotFoundException(`Message #${id} not found`);
+    return updated;
   }
 
-  async remove(id: number) {
-    const message = await this.messageRepo.findOneBy({ id });
-    if (!message) throw new NotFoundException();
-    await this.messageRepo.remove(message);
+  async remove(id: string) {
+    const message = await this.messageModel.findById(id).exec();
+    if (!message) throw new NotFoundException(`Message #${id} not found`);
+
+    // Remove from topic's messages array
+    await this.topicModel.findByIdAndUpdate(
+      message.topic,
+      { $pull: { messages: message._id } },
+    );
+
+    await message.deleteOne();
     return { deleted: true };
   }
 }

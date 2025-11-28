@@ -1,50 +1,43 @@
-import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+// src/topic/topic.service.ts
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { Topic, TopicDocument } from './topic.schema';
 import { CreateTopicDto } from './dto/create-topic.dto';
 import { UpdateTopicDto } from './dto/update-topic.dto';
-import { Topic } from './entities/topic.entity';
 
 @Injectable()
 export class TopicService {
   constructor(
-    @InjectRepository(Topic)
-    private topicRepository: Repository<Topic>,
+    @InjectModel(Topic.name) private topicModel: Model<TopicDocument>,
   ) {}
 
   async create(createTopicDto: CreateTopicDto) {
-    console.log('Creating topic with:', createTopicDto); // DEBUG
-
-    const topic = this.topicRepository.create(createTopicDto);
-    const saved = await this.topicRepository.save(topic);
-
-    console.log('Saved topic:', saved); // DEBUG
-
-    return saved;
+    const topic = new this.topicModel(createTopicDto);
+    return await topic.save();
   }
 
   findAll() {
-    return this.topicRepository.find({ relations: ['messages'] });
+    return this.topicModel.find().populate('messages').exec();
   }
 
-  findOne(id: number) {
-    return this.topicRepository.findOne({
-      where: { id },
-      relations: ['messages'],
-    });
+  async findOne(id: string) {
+    const topic = await this.topicModel.findById(id).populate('messages').exec();
+    if (!topic) throw new NotFoundException(`Topic #${id} not found`);
+    return topic;
   }
 
-  async update(id: number, updateTopicDto: UpdateTopicDto) {
-    const topic = await this.topicRepository.findOneBy({ id });
-    if (!topic) throw new Error('Topic not found');
-    Object.assign(topic, updateTopicDto);
-    return this.topicRepository.save(topic);
+  async update(id: string, updateTopicDto: UpdateTopicDto) {
+    const updated = await this.topicModel
+      .findByIdAndUpdate(id, updateTopicDto, { new: true })
+      .exec();
+    if (!updated) throw new NotFoundException(`Topic #${id} not found`);
+    return updated;
   }
 
-  async remove(id: number) {
-    const topic = await this.topicRepository.findOneBy({ id });
-    if (!topic) throw new Error('Topic not found');
-    await this.topicRepository.remove(topic);
+  async remove(id: string) {
+    const result = await this.topicModel.findByIdAndDelete(id).exec();
+    if (!result) throw new NotFoundException(`Topic #${id} not found`);
     return { deleted: true };
   }
 }
